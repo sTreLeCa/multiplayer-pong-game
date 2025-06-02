@@ -22,6 +22,7 @@ const PADDLE_HEIGHT = 100;
 const PADDLE_OFFSET_X = 50; // Distance from edge
 const BALL_RADIUS = 10;
 const GAME_LOOP_INTERVAL = 1000 / 60; // Target 60 FPS
+const PADDLE_SPEED = 15;
 
 // --- Game Types ---
 interface Player {
@@ -102,33 +103,79 @@ function initializeGameState(): GameState {
 function updateGame(room: GameRoom) {
   if (!room.gameState || room.gameState.status !== 'playing') return;
 
-  const { ball, gameArea } = room.gameState;
+  const { ball, player1Paddle, player2Paddle, gameArea, score } = room.gameState;
 
-  // --- Ball Movement (simple, no collisions yet) ---
+  // --- Ball Movement ---
   ball.x += ball.speedX;
   ball.y += ball.speedY;
 
-  // --- Basic Wall Bouncing (Top/Bottom only for now) ---
+  // --- Paddle-Ball Collision Detection ---
+  // Player 1 (Left Paddle)
+  if (
+    ball.x - ball.radius < player1Paddle.x + player1Paddle.width && // Ball's left edge past paddle's right edge
+    ball.x + ball.radius > player1Paddle.x && // Ball's right edge past paddle's left edge
+    ball.y - ball.radius < player1Paddle.y + player1Paddle.height && // Ball's top edge past paddle's bottom edge
+    ball.y + ball.radius > player1Paddle.y && // Ball's bottom edge past paddle's top edge
+    ball.speedX < 0 // Ball is moving towards player 1
+  ) {
+    ball.speedX *= -1;
+    // Optional: Adjust ball.speedY based on where it hit the paddle
+    // let deltaY = ball.y - (player1Paddle.y + player1Paddle.height / 2);
+    // ball.speedY = deltaY * 0.35; // Example factor, tune this
+    ball.x = player1Paddle.x + player1Paddle.width + ball.radius; // Prevent sticking
+  }
+
+  // Player 2 (Right Paddle)
+  if (
+    ball.x + ball.radius > player2Paddle.x && // Ball's right edge past paddle's left edge
+    ball.x - ball.radius < player2Paddle.x + player2Paddle.width && // Ball's left edge past paddle's right edge
+    ball.y - ball.radius < player2Paddle.y + player2Paddle.height && // Ball's top edge past paddle's bottom edge
+    ball.y + ball.radius > player2Paddle.y && // Ball's bottom edge past paddle's top edge
+    ball.speedX > 0 // Ball is moving towards player 2
+  ) {
+    ball.speedX *= -1;
+    // Optional: Adjust ball.speedY based on where it hit the paddle
+    // let deltaY = ball.y - (player2Paddle.y + player2Paddle.height / 2);
+    // ball.speedY = deltaY * 0.35; // Example factor, tune this
+    ball.x = player2Paddle.x - ball.radius; // Prevent sticking
+  }
+
+
+  // --- Wall Bouncing (Top/Bottom) ---
   if (ball.y - ball.radius < 0 || ball.y + ball.radius > gameArea.height) {
     ball.speedY *= -1;
-    // Ensure ball stays within bounds if it slightly overshoots
     if (ball.y - ball.radius < 0) ball.y = ball.radius;
     if (ball.y + ball.radius > gameArea.height) ball.y = gameArea.height - ball.radius;
   }
 
-  // --- Scoring (very basic, only side walls for now) ---
+  // --- Scoring ---
+  let scored = false;
   if (ball.x - ball.radius < 0) { // Player 2 scores
-    room.gameState.score.player2++;
-    resetBall(room.gameState, 2); // Player 2 scored, ball goes to player 1
+    score.player2++;
+    resetBall(room.gameState, 2);
+    scored = true;
   } else if (ball.x + ball.radius > gameArea.width) { // Player 1 scores
-    room.gameState.score.player1++;
-    resetBall(room.gameState, 1); // Player 1 scored, ball goes to player 2
+    score.player1++;
+    resetBall(room.gameState, 1);
+    scored = true;
   }
 
-  // TODO: Paddle collisions
-  // TODO: Game over condition
+  const WINNING_SCORE = 5;
+  if (!scored && (score.player1 >= WINNING_SCORE || score.player2 >= WINNING_SCORE)) {
+    room.gameState.status = 'gameOver';
+    io.to(room.roomId).emit('gameOver', {
+        winner: score.player1 >= WINNING_SCORE ? 1 : 2,
+        score: room.gameState.score
+    });
+    if (room.gameLoopIntervalId) {
+        clearInterval(room.gameLoopIntervalId);
+        room.gameLoopIntervalId = undefined;
+    }
+    console.log(`Game over in room ${room.roomId}. Winner: Player ${score.player1 >= WINNING_SCORE ? 1 : 2}`);
+  }
 
-  // Broadcast the updated game state to all players in the room
+
+  // Broadcast the updated game state
   io.to(room.roomId).emit('gameStateUpdate', room.gameState);
 }
 
@@ -163,7 +210,8 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
-  let playerRoomId: string | null = null; // To track which room this socket is in
+  let playerRoomId: string | null = null;
+  let playerInRoom: Player | undefined;
 
   // Try to find a room with a waiting player or create a new one
   let roomToJoin: GameRoom | undefined;
@@ -173,7 +221,6 @@ io.on('connection', (socket) => {
       break;
     }
   }
-
   if (roomToJoin) {
     // Join existing room with one player
     const playerNumber = 2; // The new player is player 2
@@ -181,6 +228,7 @@ io.on('connection', (socket) => {
     roomToJoin.players.push(newPlayer);
     socket.join(roomToJoin.roomId);
     playerRoomId = roomToJoin.roomId;
+    playerInRoom = newPlayer;
 
     // Notify players
     roomToJoin.players[0].socket.emit('playerAssignment', {
@@ -211,6 +259,7 @@ io.on('connection', (socket) => {
     activeRooms.set(newRoomId, newRoom);
     socket.join(newRoomId);
     playerRoomId = newRoomId;
+    playerInRoom = newPlayer;
 
     socket.emit('playerAssignment', { // Notify even the first player immediately
       playerNumber: newPlayer.playerNumber,
@@ -221,6 +270,36 @@ io.on('connection', (socket) => {
     socket.emit('message', 'Welcome to Pong! Waiting for an opponent...');
     console.log(`Player ${socket.id} (P${playerNumber}) created and joined room ${newRoomId}. Waiting for opponent.`);
   }
+
+  // --- Handle Paddle Movement ---
+  socket.on('paddleMove', (data: { direction: 'up' | 'down' }) => {
+    if (!playerRoomId || !playerInRoom) return; // Player not in a room or not identified
+
+    const room = activeRooms.get(playerRoomId);
+    if (!room || !room.gameState || room.gameState.status !== 'playing') return;
+
+    const paddleToMove = playerInRoom.playerNumber === 1
+      ? room.gameState.player1Paddle
+      : room.gameState.player2Paddle;
+
+    if (data.direction === 'up') {
+      paddleToMove.y -= PADDLE_SPEED;
+    } else if (data.direction === 'down') {
+      paddleToMove.y += PADDLE_SPEED;
+    }
+
+    // Keep paddle within game bounds
+    const gameHeight = room.gameState.gameArea.height;
+    if (paddleToMove.y < 0) {
+      paddleToMove.y = 0;
+    }
+    if (paddleToMove.y + paddleToMove.height > gameHeight) {
+      paddleToMove.y = gameHeight - paddleToMove.height;
+    }
+
+    // No need to emit gameStateUpdate here immediately,
+    // the game loop will pick up the new paddle position and broadcast.
+  });
 
 
   socket.on('disconnect', () => {
@@ -261,8 +340,6 @@ io.on('connection', (socket) => {
       }
     }
   });
-
-  // TODO: Listen for 'paddleMove' events
 });
 
 httpServer.listen(PORT, () => {
