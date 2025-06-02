@@ -7,22 +7,10 @@ import Ball from './components/Ball';
 import Scoreboard from './components/Scoreboard';
 
 const SERVER_URL = "http://localhost:3001";
-const WINNING_SCORE = 5; // Define winning score on client too for display logic
+const WINNING_SCORE = 5;
 
-// --- Client-side Type Definitions (mirroring server, ideally from a shared package) ---
-interface PaddleState {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface BallState {
-  x: number;
-  y: number;
-  radius: number;
-}
-
+interface PaddleState { x: number; y: number; width: number; height: number; }
+interface BallState { x: number; y: number; radius: number; }
 interface ClientGameState {
   player1Paddle: PaddleState;
   player2Paddle: PaddleState;
@@ -31,26 +19,25 @@ interface ClientGameState {
   gameArea: { width: number; height: number; };
   status: 'waiting' | 'playing' | 'paused' | 'gameOver';
 }
-
 interface PlayerAssignmentData {
   playerNumber: 1 | 2;
   roomId: string;
   gameArea: { width: number; height: number; };
 }
-
 interface GameOverData {
   winner: 1 | 2;
   score: { player1: number; player2: number; };
 }
 
 function App() {
-  // --- State Variables ---
+  const [socket, setSocket] = useState<Socket | null>(null); // Keep for potential conditional rendering based on socket existence
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [playerNumber, setPlayerNumber] = useState<1 | 2 | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [gameState, setGameState] = useState<ClientGameState | null>(null);
   const [gameStatusText, setGameStatusText] = useState<string>('Connecting...');
-  const [serverMessage, setServerMessage] = useState<string>(''); // For general messages from server
+  const [serverMessage, setServerMessage] = useState<string>('');
+  const [initialGameArea, setInitialGameArea] = useState<{width: number, height: number} | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
 
@@ -58,11 +45,11 @@ function App() {
   useEffect(() => {
     const newSocket = io(SERVER_URL);
     socketRef.current = newSocket;
+    setSocket(newSocket); // Set the socket in state as well
 
     newSocket.on('connect', () => {
       console.log('Connected to server! Socket ID:', newSocket.id);
       setIsConnected(true);
-      // gameStatusText will be updated by its own effect based on isConnected & playerNumber
     });
 
     newSocket.on('disconnect', () => {
@@ -72,7 +59,7 @@ function App() {
       setRoomId(null);
       setGameState(null);
       setServerMessage('');
-      // gameStatusText will be updated by its own effect
+      setInitialGameArea(null);
     });
 
     newSocket.on('message', (data: string) => {
@@ -81,61 +68,53 @@ function App() {
     });
 
     newSocket.on('waitingForOpponent', () => {
-      // gameState will be null, gameStatusText effect will handle "Waiting..."
-      setGameState(null); // Ensure any previous game state is cleared
+      setGameState(null); // Clear full game state
+      // initialGameArea might still be set if player was assigned then opponent left
     });
 
     newSocket.on('playerAssignment', (data: PlayerAssignmentData) => {
       console.log('Player assignment received:', data);
       setPlayerNumber(data.playerNumber);
       setRoomId(data.roomId);
-      // Initialize a basic game state structure for Board dimensions if no gameState yet
-      // Actual game objects will come from gameStart or gameStateUpdate
-      if (!gameState) {
-        setGameState({
-          player1Paddle: { x: 50, y: data.gameArea.height / 2 - 50, width: 10, height: 100 }, // Initial rough guess
-          player2Paddle: { x: data.gameArea.width - 60, y: data.gameArea.height / 2 - 50, width: 10, height: 100 }, // Initial rough guess
-          ball: { x: data.gameArea.width / 2, y: data.gameArea.height / 2, radius: 10 },
-          score: { player1: 0, player2: 0 },
-          gameArea: data.gameArea,
-          status: 'waiting', // Or 'assigned' if you prefer
-        });
-      }
+      setInitialGameArea(data.gameArea); // Store gameArea for initial Board rendering
+                                        // Full gameState comes with 'gameStart'
+      setGameState(null); // Ensure any old full gameState is cleared until gameStart
     });
 
-    newSocket.on('gameStart', (initialGameState: ClientGameState) => {
-      console.log('GameStart event received:', initialGameState);
-      setGameState(initialGameState);
-      setServerMessage(''); // Clear any "waiting" messages
+    newSocket.on('gameStart', (initialFullGameState: ClientGameState) => {
+      console.log('GameStart event received:', initialFullGameState);
+      setGameState(initialFullGameState);
+      setInitialGameArea(initialFullGameState.gameArea); // Ensure this is also up-to-date
+      setServerMessage('');
     });
 
     newSocket.on('gameStateUpdate', (newGameState: ClientGameState) => {
-      // console.log('GameStateUpdate received:', newGameState); // Can be very verbose
       setGameState(newGameState);
+      // If initialGameArea wasn't set for some reason, try to get it from the first gameStateUpdate
+      if (!initialGameArea && newGameState.gameArea) {
+        setInitialGameArea(newGameState.gameArea);
+      }
     });
 
     newSocket.on('gameOver', (data: GameOverData) => {
-      // The gameState.status will be 'gameOver' from a gameStateUpdate.
-      // The gameStatusText effect will construct the detailed "Game Over" message.
       console.log('GameOver event received:', data);
-      // Optionally, set a specific server message if needed, but gameStatusText handles main display
-      // setServerMessage(`Player ${data.winner} wins!`);
+      // gameState.status will be updated by a gameStateUpdate from the server.
+      // The gameStatusText effect will handle the display message.
     });
 
     newSocket.on('opponentDisconnected', (msg: string) => {
       console.log('Opponent disconnected:', msg);
-      setServerMessage(msg); // Display this direct message
-      // Server will likely send a gameStateUpdate with status 'paused' or 'gameOver'.
-      // gameStatusText will update accordingly.
+      setServerMessage(msg);
+      // Server should send a gameStateUpdate with status 'paused' or 'gameOver'.
     });
 
-    // Cleanup on component unmount
     return () => {
       console.log('Cleaning up socket connection:', newSocket.id);
       newSocket.disconnect();
       socketRef.current = null;
+      setSocket(null); // Clear socket from state on unmount
     };
-  }, []); // Empty dependency array: runs once on mount, cleans up on unmount.
+  }, []); // <<< CRITICAL: Empty dependency array for STABILITY
 
   // --- Effect for Managing Game Status Text ---
   useEffect(() => {
@@ -143,18 +122,20 @@ function App() {
       setGameStatusText('Disconnected. Please refresh.');
       return;
     }
-
-    if (!playerNumber) {
+    if (!playerNumber || !initialGameArea) { // We need at least playerNumber and initialGameArea to know we're in a "game context"
       setGameStatusText('Connected. Waiting for player assignment...');
       return;
     }
-
-    if (!gameState || gameState.status === 'waiting') {
-      setGameStatusText(`You are Player ${playerNumber}. Waiting for an opponent...`);
-      return;
+    // If we have initialGameArea & playerNumber, but no full gameState, we are assigned but waiting for gameStart
+    if (!gameState) {
+        setGameStatusText(`You are Player ${playerNumber}. Waiting for game to start...`);
+        return;
     }
-
+    // From here, we assume gameState is available
     switch (gameState.status) {
+      case 'waiting': // This status might be brief on server if game starts immediately
+        setGameStatusText(`You are Player ${playerNumber}. Waiting for an opponent or game to start...`);
+        break;
       case 'playing':
         setGameStatusText(`Game in progress. You are Player ${playerNumber}.`);
         break;
@@ -163,31 +144,22 @@ function App() {
         break;
       case 'gameOver':
         let winnerDetails = "";
-        if (gameState.score.player1 >= WINNING_SCORE) {
-          winnerDetails = `Player 1 wins!`;
-        } else if (gameState.score.player2 >= WINNING_SCORE) {
-          winnerDetails = `Player 2 wins!`;
-        } else {
-          winnerDetails = "Game Over."; // Fallback if score condition isn't met but status is gameOver (e.g. disconnect)
-        }
-        setGameStatusText(
-          `${winnerDetails} Final Score: P1 ${gameState.score.player1} - P2 ${gameState.score.player2}`
-        );
+        if (gameState.score.player1 >= WINNING_SCORE) winnerDetails = `Player 1 wins!`;
+        else if (gameState.score.player2 >= WINNING_SCORE) winnerDetails = `Player 2 wins!`;
+        else winnerDetails = "Game Over."; // Handles disconnects or other non-score based game overs
+        setGameStatusText(`${winnerDetails} Final Score: P1 ${gameState.score.player1} - P2 ${gameState.score.player2}`);
         break;
-      default:
-        setGameStatusText('Unknown game state.');
+      default: setGameStatusText('Unknown game state.');
     }
-  }, [isConnected, playerNumber, gameState]); // Dependencies that influence the game status text
+  }, [isConnected, playerNumber, gameState, initialGameArea]);
 
   // --- Paddle Movement Input Handling ---
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (!socketRef.current || !playerNumber || !gameState || gameState.status !== 'playing') {
       return;
     }
-
     let direction: 'up' | 'down' | null = null;
-    const key = event.key.toLowerCase(); // Normalize key
-
+    const key = event.key.toLowerCase();
     if (playerNumber === 1) {
       if (key === 'w') direction = 'up';
       else if (key === 's') direction = 'down';
@@ -195,32 +167,45 @@ function App() {
       if (key === 'arrowup') direction = 'up';
       else if (key === 'arrowdown') direction = 'down';
     }
-
+    if (key === 'w' || key === 's' || key === 'arrowup' || key === 'arrowdown') {
+      event.preventDefault();
+    }
     if (direction) {
       socketRef.current.emit('paddleMove', { direction });
     }
-  }, [playerNumber, gameState]); // gameState is needed to check gameState.status
+  }, [playerNumber, gameState]);
 
-  // Effect for adding/removing keyboard event listeners
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleKeyDown]); // Re-bind if handleKeyDown changes (due to its own dependencies)
+  }, [handleKeyDown]);
 
   // --- Render Logic ---
   const renderGameArea = () => {
-    if (!gameState || !playerNumber) { // Need playerNumber to know if we should even try to render a game for this client
-      return null; // Or some placeholder like <p>Waiting to join game...</p>
+    const gameAreaToRender = gameState?.gameArea || initialGameArea;
+
+    if (!gameAreaToRender || !playerNumber) {
+      // If no game area info or not assigned a player number, don't render game specifics
+      return null;
     }
 
-    const { player1Paddle, player2Paddle, ball, score, gameArea } = gameState;
+    // If we have gameArea but not the full gameState, render the board as a placeholder
+    if (!gameState) {
+        return (
+            <Board width={gameAreaToRender.width} height={gameAreaToRender.height}>
+                {/* Optional: Could show static placeholder paddles based on gameAreaToRender if desired */}
+            </Board>
+        );
+    }
 
+    // Full gameState is available, render everything
+    const { player1Paddle, player2Paddle, ball, score } = gameState;
     return (
       <>
         <Scoreboard score1={score.player1} score2={score.player2} />
-        <Board width={gameArea.width} height={gameArea.height}>
+        <Board width={gameAreaToRender.width} height={gameAreaToRender.height}>
           <Paddle {...player1Paddle} />
           <Paddle {...player2Paddle} />
           <Ball {...ball} />
@@ -242,7 +227,6 @@ function App() {
         </p>
         <p className="game-status">{gameStatusText}</p>
         {serverMessage && <p className="server-message">Server: {serverMessage}</p>}
-
         {renderGameArea()}
       </header>
     </div>
