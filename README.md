@@ -5,110 +5,116 @@ A classic real-time multiplayer Pong game built with React, Node.js, TypeScript,
 ## Features
 
 *   **Real-time Multiplayer:** Two players can connect and play against each other.
-*   **Classic Pong Gameplay:** Control paddles to hit a ball, score points when opponent misses.
-*   **Server-Authoritative Logic:** All game mechanics (ball physics, collision, scoring) are handled by the server to ensure fairness and prevent cheating.
-*   **Dynamic Ball Physics:** Ball bounces off paddles with an angle determined by the impact point.
-*   **"Play Again" Functionality:** Players can easily start a new game after a match concludes.
-*   **TypeScript:** Type safety and improved code organization across both frontend and backend.
-*   **Responsive UI:** Basic responsive design for the game interface.
+*   **Classic Pong Gameplay:** Control paddles to hit a ball, score points when the opponent misses.
+*   **Server-Authoritative Logic:** All game mechanics (ball physics, collision detection, scoring) are handled by the server to ensure fairness and prevent cheating.
+*   **Dynamic Ball Physics:** The ball bounces off paddles with an angle determined by the impact point on the paddle.
+*   **"Play Again" Functionality:** Players can easily choose to start a new game after a match concludes.
+*   **TypeScript:** Utilized across both frontend (React) and backend (Node.js) for type safety and improved code organization.
+*   **Interactive UI:** A clean interface built with React to display the game area, paddles, ball, and scores.
 
 ## Technologies Used
 
 *   **Frontend:**
-    *   React
+    *   React (with Hooks)
     *   TypeScript
     *   Socket.IO Client
     *   HTML5 / CSS3
 *   **Backend:**
     *   Node.js
-    *   Express.js (or a minimal HTTP server setup)
+    *   Express.js (for basic HTTP server and Socket.IO integration)
     *   TypeScript
     *   Socket.IO Server
 *   **Development Tools:**
-    *   `npm` (or `yarn`) for package management
-    *   `nodemon` and `ts-node` for backend development workflow
+    *   `npm` for package management
+    *   `nodemon` and `ts-node` for efficient backend development workflow
 
 ## Project Structure
 
-multiplayer-pong-game/
-├── client/ # React frontend application
-│ ├── public/
-│ ├── src/
-│ │ ├── components/ # Reusable React components (Board, Paddle, Ball, etc.)
-│ │ ├── App.tsx # Main application component
-│ │ ├── App.css # Styles for App component
-│ │ └── ... # Other client files
-│ ├── package.json
-│ └── tsconfig.json
-├── server/ # Node.js backend application
-│ ├── src/
-│ │ └── server.ts # Main server logic
-│ ├── package.json
-│ └── tsconfig.json
-├── .gitignore
-├── README.md # This file
-├── specifications.md # Project requirements
-└── to_do.md # Task tracking
+The project is organized into two main top-level directories:
 
+*   **`client/`**: Contains the frontend React application.
+    *   `public/`: Holds static assets like `index.html`.
+    *   `src/`: Contains the main React TypeScript source code.
+        *   `components/`: Includes reusable React components (e.g., `Board.tsx`, `Paddle.tsx`).
+        *   `App.tsx`: The main application component orchestrating the UI.
+        *   `App.css`: Styles for the application.
+    *   `package.json`: Manages frontend dependencies and scripts.
+    *   `tsconfig.json`: TypeScript configuration for the client.
+
+*   **`server/`**: Contains the backend Node.js application.
+    *   `src/`: Contains the main server TypeScript source code.
+        *   `server.ts`: The core server file handling Express setup, Socket.IO connections, game room management, and all game logic.
+    *   `package.json`: Manages backend dependencies and scripts.
+    *   `tsconfig.json`: TypeScript configuration for the server.
+
+At the root of the project, you will also find:
+*   `.gitignore`: Specifies files and folders for Git to ignore.
+*   `README.md`: (This file) Provides an overview, setup, and usage instructions.
+*   `specifications.md`: Outlines the initial project requirements.
+*   `to_do.md`: Tracks development tasks and progress.
 
 ## Setup and Installation
 
 ### Prerequisites
 
-*   Node.js (v16.x or later recommended)
-*   npm (v8.x or later recommended) or yarn
+*   Node.js (v16.x or later is recommended)
+*   `npm` (v8.x or later is recommended, usually comes with Node.js)
+    *   (You can also use `yarn` if you prefer, adjusting commands accordingly)
 
 ### Installation Steps
 
 1.  **Clone the repository:**
+    *(Replace `[Your GitHub Repository URL]` with the actual URL once you create the repository on GitHub.)*
     ```bash
-    git clone [Your GitHub Repository URL when you create it]
+    git clone [Your GitHub Repository URL]
     cd multiplayer-pong-game
     ```
 
 2.  **Install Server Dependencies:**
+    Navigate to the `server` directory and install its dependencies.
     ```bash
     cd server
     npm install
     ```
 
 3.  **Install Client Dependencies:**
+    Navigate to the `client` directory (from the project root, so `cd ../client` if you are in `server`, or `cd client` if in the root) and install its dependencies.
     ```bash
     cd ../client 
-    # (or from root: cd client)
+    # (or from project root: cd client)
     npm install
     ```
 
 ## Running the Application
 
-You will need two separate terminal windows to run the backend server and the frontend client simultaneously.
+To run the game, you need to start both the backend server and the frontend client. This typically requires two separate terminal windows or tabs.
 
 1.  **Start the Backend Server:**
-    *   Navigate to the `server` directory:
+    *   Open a terminal and navigate to the `server` directory:
         ```bash
         cd path/to/your/project/multiplayer-pong-game/server
         ```
-    *   Run the development server:
+    *   Run the development server script:
         ```bash
         npm run dev
         ```
-    *   The server will typically start on `http://localhost:3001`. You should see a log message confirming this.
+    *   The server will start, typically on `http://localhost:3001`. You should see a log message in the terminal confirming this (e.g., "Server is listening on http://localhost:3001").
 
 2.  **Start the Frontend Client:**
-    *   Navigate to the `client` directory:
+    *   Open a second terminal and navigate to the `client` directory:
         ```bash
         cd path/to/your/project/multiplayer-pong-game/client
         ```
-    *   Run the React development server:
+    *   Run the React development server script:
         ```bash
         npm start
         ```
-    *   This will usually open the application automatically in your default web browser at `http://localhost:3000`. If not, open it manually.
+    *   This command will usually open the application automatically in your default web browser, typically at `http://localhost:3000`. If it doesn't open automatically, manually navigate to this URL in your browser.
 
 3.  **Play the Game:**
-    *   Open `http://localhost:3000` in two separate browser windows or tabs to simulate two players.
-    *   The first player will wait for an opponent.
-    *   Once the second player connects, the game will begin!
+    *   To simulate two players, open `http://localhost:3000` in two separate browser windows or tabs.
+    *   The first player to connect will see a "Waiting for an opponent..." message.
+    *   Once the second player connects, the game will begin for both!
 
 ## How to Play
 
@@ -116,14 +122,13 @@ You will need two separate terminal windows to run the backend server and the fr
     *   Move Up: `W` key
     *   Move Down: `S` key
 *   **Player 2 (Right Paddle):**
-    *   Move Up: `ArrowUp` key
-    *   Move Down: `ArrowDown` key
-*   **Objective:** Be the first player to reach 5 points. A point is scored when your opponent fails to return the ball.
-*   **Play Again:** After a game ends, both players will see a "Play Again?" button. If both players click it, a new game will start.
+    *   Move Up: `ArrowUp` key (Up Arrow)
+    *   Move Down: `ArrowDown` key (Down Arrow)
+*   **Objective:** Be the first player to reach 5 points. A point is scored when your opponent fails to return the ball past their paddle.
+*   **Play Again:** After a game ends (one player reaches 5 points), both players will see a "Play Again?" button. If both players click this button, a new game will start with scores reset.
 
 ## [Optional: Project Reflection / Known Issues / Future Enhancements]
 
-*   [Example: The current room management is basic and pairs the first two available players. A future enhancement could be a lobby system with named rooms.]
-*   [Example: No advanced sound effects or visual polish beyond core gameplay.]
-
----
+*   The current room management is basic and pairs the first two available players. A future enhancement could be a lobby system with multiple named rooms or direct challenges.
+*   Visuals are functional; further styling or animations could enhance the user experience.
+*   Error handling can be made more granular for specific network or server issues.
