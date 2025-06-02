@@ -18,16 +18,14 @@ const GAME_AREA_WIDTH = 800;
 const GAME_AREA_HEIGHT = 600;
 const PADDLE_WIDTH = 10;
 const PADDLE_HEIGHT = 100;
-const PADDLE_OFFSET_X = 50; // Distance from edge for paddle initial position
+const PADDLE_OFFSET_X = 50;
 const BALL_RADIUS = 10;
-const INITIAL_BALL_SPEED = 5; // Magnitude for X and Y speed
-const PADDLE_SPEED = 15;      // How many pixels the paddle moves per client update
-const GAME_LOOP_INTERVAL = 1000 / 60; // Target 60 FPS for game loop
+const INITIAL_BALL_SPEED = 5;
+const PADDLE_SPEED = 15;
+const GAME_LOOP_INTERVAL = 1000 / 60;
 const WINNING_SCORE = 5;
-
-// Constants for refined bounce physics
-const MAX_BALL_SPEED_Y = 7; // Max vertical speed component of the ball
-const PADDLE_BOUNCE_ANGLE_FACTOR = 0.30; // Determines how much paddle hit location affects ball's Y speed
+const MAX_BALL_SPEED_Y = 7;
+const PADDLE_BOUNCE_ANGLE_FACTOR = 0.30;
 
 // --- Game Types ---
 interface Player {
@@ -65,10 +63,11 @@ interface GameRoom {
   players: Player[];
   gameState?: GameState;
   gameLoopIntervalId?: NodeJS.Timeout;
+  playAgainRequests: Set<string>; // Player IDs who requested to play again
 }
 
 // --- Server State ---
-const activeRooms: Map<string, GameRoom> = new Map(); // roomId -> GameRoom
+const activeRooms: Map<string, GameRoom> = new Map();
 
 // --- Helper Functions ---
 function createRoomId(): string {
@@ -93,8 +92,8 @@ function initializeGameState(): GameState {
       x: GAME_AREA_WIDTH / 2,
       y: GAME_AREA_HEIGHT / 2,
       radius: BALL_RADIUS,
-      speedX: Math.random() > 0.5 ? INITIAL_BALL_SPEED : -INITIAL_BALL_SPEED, // Random initial X direction
-      speedY: Math.random() > 0.5 ? INITIAL_BALL_SPEED : -INITIAL_BALL_SPEED, // Random initial Y direction
+      speedX: Math.random() > 0.5 ? INITIAL_BALL_SPEED : -INITIAL_BALL_SPEED,
+      speedY: Math.random() > 0.5 ? INITIAL_BALL_SPEED : -INITIAL_BALL_SPEED,
     },
     score: { player1: 0, player2: 0 },
     gameArea: { width: GAME_AREA_WIDTH, height: GAME_AREA_HEIGHT },
@@ -107,79 +106,75 @@ function resetBall(gameState: GameState, lastScorer: 1 | 2) {
   gameState.ball.y = GAME_AREA_HEIGHT / 2;
   // Ball moves towards the player who was scored upon
   gameState.ball.speedX = lastScorer === 1 ? -INITIAL_BALL_SPEED : INITIAL_BALL_SPEED;
-  // Randomize Y direction slightly, but less extreme than initial serve
+  // Randomize Y direction slightly
   gameState.ball.speedY = (Math.random() * INITIAL_BALL_SPEED * 0.6 + INITIAL_BALL_SPEED * 0.2) * (Math.random() > 0.5 ? 1 : -1);
 }
 
 function updateGame(room: GameRoom) {
-  if (!room.gameState || (room.gameState.status !== 'playing' && room.gameState.status !== 'paused')) return; // Allow update if paused for some reason, but mostly for 'playing'
-  if (room.gameState.status === 'paused') { // If paused, just send current state, don't update physics
+  if (!room.gameState || (room.gameState.status !== 'playing' && room.gameState.status !== 'paused')) return;
+
+  // If paused, just send current state, don't update physics (e.g., if one player disconnected)
+  if (room.gameState.status === 'paused') {
     io.to(room.roomId).emit('gameStateUpdate', room.gameState);
     return;
   }
 
-
   const { ball, player1Paddle, player2Paddle, gameArea, score } = room.gameState;
 
-  // --- Ball Movement ---
+  // Ball Movement
   ball.x += ball.speedX;
   ball.y += ball.speedY;
 
-  // --- Paddle-Ball Collision Detection ---
-  // Player 1 (Left Paddle)
+  // Paddle-Ball Collision Detection - Player 1 (Left Paddle)
   if (
     ball.x - ball.radius < player1Paddle.x + player1Paddle.width &&
     ball.x + ball.radius > player1Paddle.x &&
     ball.y - ball.radius < player1Paddle.y + player1Paddle.height &&
     ball.y + ball.radius > player1Paddle.y &&
-    ball.speedX < 0 // Ball is moving towards player 1
+    ball.speedX < 0
   ) {
     ball.speedX *= -1;
     let deltaY = ball.y - (player1Paddle.y + player1Paddle.height / 2);
     ball.speedY = deltaY * PADDLE_BOUNCE_ANGLE_FACTOR;
-    if (Math.abs(ball.speedY) > MAX_BALL_SPEED_Y) {
-      ball.speedY = MAX_BALL_SPEED_Y * Math.sign(ball.speedY);
-    }
+    if (Math.abs(ball.speedY) > MAX_BALL_SPEED_Y) ball.speedY = MAX_BALL_SPEED_Y * Math.sign(ball.speedY);
     ball.x = player1Paddle.x + player1Paddle.width + ball.radius; // Prevent sticking
   }
 
-  // Player 2 (Right Paddle)
+  // Paddle-Ball Collision Detection - Player 2 (Right Paddle)
   if (
     ball.x + ball.radius > player2Paddle.x &&
     ball.x - ball.radius < player2Paddle.x + player2Paddle.width &&
     ball.y - ball.radius < player2Paddle.y + player2Paddle.height &&
     ball.y + ball.radius > player2Paddle.y &&
-    ball.speedX > 0 // Ball is moving towards player 2
+    ball.speedX > 0
   ) {
     ball.speedX *= -1;
     let deltaY = ball.y - (player2Paddle.y + player2Paddle.height / 2);
     ball.speedY = deltaY * PADDLE_BOUNCE_ANGLE_FACTOR;
-    if (Math.abs(ball.speedY) > MAX_BALL_SPEED_Y) {
-      ball.speedY = MAX_BALL_SPEED_Y * Math.sign(ball.speedY);
-    }
+    if (Math.abs(ball.speedY) > MAX_BALL_SPEED_Y) ball.speedY = MAX_BALL_SPEED_Y * Math.sign(ball.speedY);
     ball.x = player2Paddle.x - ball.radius; // Prevent sticking
   }
 
-  // --- Wall Bouncing (Top/Bottom) ---
+  // Wall Bouncing (Top/Bottom)
   if (ball.y - ball.radius < 0 || ball.y + ball.radius > gameArea.height) {
     ball.speedY *= -1;
-    if (ball.y - ball.radius < 0) ball.y = ball.radius; // Clamp to prevent going out
-    if (ball.y + ball.radius > gameArea.height) ball.y = gameArea.height - ball.radius; // Clamp
+    if (ball.y - ball.radius < 0) ball.y = ball.radius;
+    if (ball.y + ball.radius > gameArea.height) ball.y = gameArea.height - ball.radius;
   }
 
-  // --- Scoring ---
+  // Scoring
   let justScored = false;
   if (ball.x + ball.radius < 0) { // Ball passed left paddle - Player 2 scores
     score.player2++;
-    resetBall(room.gameState, 2); // Player 2 scored, ball goes to Player 1
+    resetBall(room.gameState, 2);
     justScored = true;
   } else if (ball.x - ball.radius > gameArea.width) { // Ball passed right paddle - Player 1 scores
     score.player1++;
-    resetBall(room.gameState, 1); // Player 1 scored, ball goes to Player 2
+    resetBall(room.gameState, 1);
     justScored = true;
   }
 
-  // --- Game Over Condition ---
+  // Game Over Condition
   if (room.gameState.status === 'playing' && (score.player1 >= WINNING_SCORE || score.player2 >= WINNING_SCORE)) {
     room.gameState.status = 'gameOver';
     io.to(room.roomId).emit('gameOver', {
@@ -191,8 +186,7 @@ function updateGame(room: GameRoom) {
       room.gameLoopIntervalId = undefined;
     }
     console.log(`Game over in room ${room.roomId}. Winner: Player ${score.player1 >= WINNING_SCORE ? 1 : 2}`);
-    // Send one final state update for game over
-    io.to(room.roomId).emit('gameStateUpdate', room.gameState);
+    io.to(room.roomId).emit('gameStateUpdate', room.gameState); // Send final game over state
     return; // Stop further processing in this tick if game just ended
   }
 
@@ -207,12 +201,14 @@ function startGame(room: GameRoom) {
     console.error(`Attempted to start game in room ${room.roomId} with ${room.players.length} players.`);
     return;
   }
+  room.gameState = initializeGameState(); // Resets scores, positions, etc.
+  room.gameState.status = 'playing';      // Ensure status is 'playing'
+  room.playAgainRequests.clear();         // Clear any previous play again requests for the new game
 
-  room.gameState = initializeGameState();
-  io.to(room.roomId).emit('gameStart', room.gameState); // Send initial state
-  console.log(`Game started in room ${room.roomId}`);
+  io.to(room.roomId).emit('gameStart', room.gameState);
+  console.log(`Game started/restarted in room ${room.roomId}`);
 
-  if (room.gameLoopIntervalId) { // Clear any old interval
+  if (room.gameLoopIntervalId) { // Clear any old interval before starting a new one
     clearInterval(room.gameLoopIntervalId);
   }
   room.gameLoopIntervalId = setInterval(() => {
@@ -220,7 +216,7 @@ function startGame(room: GameRoom) {
   }, GAME_LOOP_INTERVAL);
 }
 
-// --- Express Route (Optional: for health check or info) ---
+// --- Express Route ---
 app.get('/', (req, res) => {
   res.send('Pong Server is Active!');
 });
@@ -233,26 +229,27 @@ io.on('connection', (socket: Socket) => {
 
   // Try to find a room with a waiting player or create a new one
   let roomToJoin: GameRoom | undefined;
-  for (const room of activeRooms.values()) {
-    if (room.players.length === 1) {
-      roomToJoin = room;
+  for (const currentRoom of activeRooms.values()) {
+    if (currentRoom.players.length === 1) {
+      roomToJoin = currentRoom;
       break;
     }
   }
 
   if (roomToJoin) {
-    const playerNumber = 2;
+    const playerNumber = 2; // This new player will be Player 2
     playerInRoomObject = { id: socket.id, socket, playerNumber };
     roomToJoin.players.push(playerInRoomObject);
     socket.join(roomToJoin.roomId);
     playerRoomId = roomToJoin.roomId;
 
-    // Notify both players of their assignment
+    // Notify Player 1 (already in room)
     roomToJoin.players[0].socket.emit('playerAssignment', {
       playerNumber: roomToJoin.players[0].playerNumber,
       roomId: roomToJoin.roomId,
       gameArea: { width: GAME_AREA_WIDTH, height: GAME_AREA_HEIGHT }
     });
+    // Notify Player 2 (newly joined)
     playerInRoomObject.socket.emit('playerAssignment', {
       playerNumber: playerInRoomObject.playerNumber,
       roomId: roomToJoin.roomId,
@@ -261,15 +258,16 @@ io.on('connection', (socket: Socket) => {
 
     console.log(`Player ${socket.id} (P${playerNumber}) joined room ${roomToJoin.roomId}. Starting game.`);
     io.to(roomToJoin.roomId).emit('message', 'Opponent found! Game is starting...');
-    startGame(roomToJoin);
-
+    startGame(roomToJoin); // startGame also clears playAgainRequests for the room
   } else {
+    // Create a new room for this player (Player 1)
     const newRoomId = createRoomId();
     const playerNumber = 1;
     playerInRoomObject = { id: socket.id, socket, playerNumber };
     const newRoom: GameRoom = {
       roomId: newRoomId,
       players: [playerInRoomObject],
+      playAgainRequests: new Set<string>(), // Initialize for the new room
     };
     activeRooms.set(newRoomId, newRoom);
     socket.join(newRoomId);
@@ -285,9 +283,37 @@ io.on('connection', (socket: Socket) => {
     console.log(`Player ${socket.id} (P${playerNumber}) created and joined room ${newRoomId}. Waiting for opponent.`);
   }
 
+  socket.on('requestPlayAgain', () => {
+    if (!playerRoomId || !playerInRoomObject) return; // Should not happen if logic is correct
+    const room = activeRooms.get(playerRoomId);
+
+    if (!room || room.players.length !== 2 || !room.gameState || room.gameState.status !== 'gameOver') {
+      console.log(`Player ${socket.id} sent requestPlayAgain in invalid state for room ${playerRoomId}. Status: ${room?.gameState?.status}, Players: ${room?.players.length}`);
+      socket.emit('message', 'Cannot request play again at this time.'); // Inform player
+      return;
+    }
+
+    room.playAgainRequests.add(playerInRoomObject.id);
+    console.log(`Player ${playerInRoomObject.id} (P${playerInRoomObject.playerNumber}) requested to play again in room ${room.roomId}. Total requests: ${room.playAgainRequests.size}`);
+
+    // Notify the other player (optional but good UX)
+    const otherPlayer = room.players.find(p => p.id !== playerInRoomObject?.id);
+    if (otherPlayer) {
+        otherPlayer.socket.emit('message', `Player ${playerInRoomObject.playerNumber} wants to play again!`);
+    }
+
+    if (room.playAgainRequests.size === 2) {
+      // Both players want to play again!
+      console.log(`Both players in room ${room.roomId} want to play again. Resetting game.`);
+      startGame(room); // This will reset game state, clear requests, and restart loop
+    } else {
+      // Notify requesting player they are waiting for opponent
+      socket.emit('message', 'Request sent. Waiting for your opponent to play again...');
+    }
+  });
+
   socket.on('paddleMove', (data: { direction: 'up' | 'down' }) => {
     if (!playerRoomId || !playerInRoomObject) return;
-
     const room = activeRooms.get(playerRoomId);
     if (!room || !room.gameState || room.gameState.status !== 'playing') return;
 
@@ -300,7 +326,6 @@ io.on('connection', (socket: Socket) => {
     } else if (data.direction === 'down') {
       paddleToMove.y += PADDLE_SPEED;
     }
-
     // Keep paddle within game bounds
     paddleToMove.y = Math.max(0, Math.min(paddleToMove.y, GAME_AREA_HEIGHT - paddleToMove.height));
   });
@@ -310,34 +335,41 @@ io.on('connection', (socket: Socket) => {
     if (playerRoomId) {
       const room = activeRooms.get(playerRoomId);
       if (room) {
+        // Clear this player's play again request if they had one
+        if (playerInRoomObject) { // playerInRoomObject refers to the disconnected player's object
+          room.playAgainRequests.delete(playerInRoomObject.id);
+        }
+
         room.players = room.players.filter(p => p.id !== socket.id);
         console.log(`Player ${socket.id} removed from room ${playerRoomId}. Players remaining: ${room.players.length}`);
 
-        if (room.gameLoopIntervalId) { // If a game was in progress
-          if (room.players.length < 2) { // Not enough players to continue
+        if (room.gameLoopIntervalId && room.players.length < 2) {
+            // If game was running and now not enough players, stop/pause it
             clearInterval(room.gameLoopIntervalId);
             room.gameLoopIntervalId = undefined;
             if (room.gameState) {
-              room.gameState.status = room.players.length === 1 ? 'paused' : 'gameOver'; // Paused if one remains, gameOver if empty
-              console.log(`Game in room ${playerRoomId} ${room.gameState.status} due to player disconnect.`);
-              // Notify remaining player
-              if (room.players.length === 1) {
-                room.players[0].socket.emit('opponentDisconnected', 'Your opponent has disconnected. Game paused.');
-                io.to(room.roomId).emit('gameStateUpdate', room.gameState); // Send updated state
-              }
+                room.gameState.status = 'paused'; // Or 'gameOver' if you prefer only one player can't continue
             }
-          }
-        } else if (room.players.length === 1) { // Was waiting for opponent, now that one left
-            console.log(`Player ${room.players[0].id} is now waiting alone in room ${playerRoomId}.`);
-            room.players[0].socket.emit('message', 'Your opponent left. Waiting for a new opponent...');
-            room.players[0].socket.emit('waitingForOpponent');
+            console.log(`Game in room ${playerRoomId} ${room.gameState?.status} due to player disconnect.`);
         }
 
-
-        if (room.players.length === 0) {
-          if (room.gameLoopIntervalId) clearInterval(room.gameLoopIntervalId); // Ensure loop is cleared
-          activeRooms.delete(playerRoomId);
-          console.log(`Room ${playerRoomId} closed as it's empty.`);
+        if (room.players.length === 1) { // One player remains
+            const remainingPlayer = room.players[0];
+            remainingPlayer.socket.emit('opponentDisconnected', 'Your opponent has disconnected.');
+            if (room.gameState) { // If there was an active or paused game
+                // If the game wasn't already over, mark it as paused (or game over)
+                if (room.gameState.status !== 'gameOver') {
+                    room.gameState.status = 'paused';
+                }
+                 // Inform remaining player that play again is void
+                remainingPlayer.socket.emit('message', 'Play again option is now void.');
+                io.to(room.roomId).emit('gameStateUpdate', room.gameState); // Send updated state
+            }
+            room.playAgainRequests.clear(); // Clear any pending play again requests for this room
+        } else if (room.players.length === 0) { // Room is now empty
+            if (room.gameLoopIntervalId) clearInterval(room.gameLoopIntervalId); // Ensure loop is stopped
+            activeRooms.delete(playerRoomId);
+            console.log(`Room ${playerRoomId} closed as it's empty.`);
         }
       }
     }

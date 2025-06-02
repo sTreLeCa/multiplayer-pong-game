@@ -14,18 +14,18 @@
 }
 
 .App-header {
-  background-color: #282c34;
+  background-color: #282c34; /* Dark background */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  justify-content: center; /* Center content vertically */
+  font-size: calc(10px + 2vmin); /* Responsive font size */
+  color: white; /* Default text color for the header */
 }
 
 .App-link {
-  color: #61dafb;
+  color: #61dafb; /* React's default link color */
 }
 
 @keyframes App-logo-spin {
@@ -35,4 +35,53 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Styles for Pong Game Specific Elements */
+h1 { /* Style for the "Multiplayer Pong" title */
+  margin-bottom: 20px; /* Space below the title */
+}
+
+.connection-status,
+.game-status,
+.server-message,
+.controls-text {
+  margin: 5px 0; /* Small vertical margin for status texts */
+  font-size: 0.8em; /* Slightly smaller font for status lines */
+  min-height: 1.2em; /* Ensure space even if text is empty to prevent layout jumps */
+}
+
+.server-message {
+  color: #ffcc00; /* A distinct color for server messages, e.g., yellow/orange */
+  font-style: italic;
+}
+
+.game-status {
+  font-weight: bold; /* Make the main game status more prominent */
+}
+
+.controls-text {
+  margin-top: 10px; /* Space above control instructions */
+  color: #aaa; /* Lighter color for less prominent text */
+}
+
+.play-again-button {
+  margin-top: 25px; /* Space above the button, especially after the game board */
+  padding: 12px 25px; /* Comfortable padding */
+  font-size: 1em;    /* Relative to parent's font size (calc(10px + 2vmin)) */
+  font-weight: bold;
+  color: #282c34;     /* Dark text for light button */
+  background-color: #61dafb; /* React blue */
+  border: none;
+  border-radius: 8px; /* Slightly more rounded corners */
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, transform 0.1s ease; /* Smooth transitions */
+}
+
+.play-again-button:hover {
+  background-color: #21a1f1; /* Darker blue on hover */
+}
+
+.play-again-button:active {
+  transform: scale(0.98); /* Slight shrink effect on click */
 }
